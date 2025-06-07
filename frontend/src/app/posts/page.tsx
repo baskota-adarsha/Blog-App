@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 };
 
 interface BlogPageProps {
-  searchParams: { category?: string };
+  searchParams: Promise<{ category?: string }>;
 }
 
 // Move the skeleton to page level
