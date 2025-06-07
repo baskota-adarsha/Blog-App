@@ -97,7 +97,30 @@ export default function NewsSearchClient({ query }: NewsSearchClientProps) {
   const [currentPage, setCurrentPage] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [windowWidth, setWindowWidth] = useState(1024); // Default to desktop width
+  const [isMounted, setIsMounted] = useState(false);
   const postsPerPage = 9;
+
+  // Handle mounting and window resize for responsive pagination
+  useEffect(() => {
+    setIsMounted(true);
+
+    const handleResize = () => {
+      setWindowWidth(window.innerWidth);
+    };
+
+    // Set initial width only after mounting
+    if (typeof window !== "undefined") {
+      handleResize();
+      window.addEventListener("resize", handleResize);
+    }
+
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("resize", handleResize);
+      }
+    };
+  }, []);
 
   const fetchNews = async (page: number) => {
     setIsLoading(true);
@@ -118,14 +141,18 @@ export default function NewsSearchClient({ query }: NewsSearchClientProps) {
   };
 
   useEffect(() => {
-    fetchNews(0); // Start with page 0
+    if (query) {
+      fetchNews(0); // Start with page 0
+    }
   }, [query]);
 
   const handlePageChange = (newPage: number) => {
     if (newPage >= 0 && pagination && newPage < pagination.totalPages) {
       fetchNews(newPage);
-      // Scroll to top when changing pages
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      // Scroll to top when changing pages - only if mounted
+      if (isMounted && typeof window !== "undefined") {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
     }
   };
 
@@ -133,8 +160,8 @@ export default function NewsSearchClient({ query }: NewsSearchClientProps) {
     if (!pagination || pagination.totalPages <= 1) return [];
 
     const pages = [];
-    // For very small screens, show fewer page numbers
-    const maxVisiblePages = window.innerWidth <= 314 ? 3 : 5;
+    // For very small screens, show fewer page numbers - only use windowWidth after mounting
+    const maxVisiblePages = isMounted && windowWidth <= 314 ? 3 : 5;
     const currentPage = pagination.currentPage;
     const totalPages = pagination.totalPages;
 
@@ -443,14 +470,10 @@ export default function NewsSearchClient({ query }: NewsSearchClientProps) {
                 <button
                   onClick={() => handlePageChange(pagination.currentPage - 1)}
                   disabled={!pagination.hasPrevPage}
-                  className={`w-8 h-8 xs:w-10 xs:h-10 sm:w-12 sm:h-12 rounded-lg xs:rounded-xl sm:rounded-2xl flex items-center justify-center transition-all duration-300 ${
-                    pagination.hasPrevPage
-                      ? "bg-white/80 text-slate-700 hover:bg-indigo-500 hover:text-white shadow-lg"
-                      : "bg-slate-200 text-slate-400 cursor-not-allowed"
-                  }`}
+                  className="flex items-center justify-center w-8 h-8 xs:w-10 xs:h-10 sm:w-12 sm:h-12 bg-white/80 backdrop-blur-sm rounded-lg xs:rounded-xl shadow-lg border border-slate-200/50 hover:bg-indigo-50 hover:border-indigo-200 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-300 disabled:hover:bg-white/80 disabled:hover:border-slate-200/50"
                 >
                   <svg
-                    className="w-3 h-3 xs:w-4 xs:h-4 sm:w-5 sm:h-5"
+                    className="w-3 h-3 xs:w-4 xs:h-4 sm:w-5 sm:h-5 text-slate-600"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -465,52 +488,30 @@ export default function NewsSearchClient({ query }: NewsSearchClientProps) {
                 </button>
 
                 {/* Page Numbers */}
-                {generatePageNumbers().map((pageNum) => (
-                  <button
-                    key={pageNum}
-                    onClick={() => handlePageChange(pageNum)}
-                    className={`w-8 h-8 xs:w-10 xs:h-10 sm:w-12 sm:h-12 rounded-lg xs:rounded-xl sm:rounded-2xl font-bold transition-all duration-300 text-xs xs:text-sm sm:text-base ${
-                      pageNum === pagination.currentPage
-                        ? "bg-indigo-500 text-white shadow-lg"
-                        : "bg-white/80 text-slate-700 hover:bg-indigo-500 hover:text-white shadow-lg"
-                    }`}
-                  >
-                    {pageNum + 1}
-                  </button>
-                ))}
-
-                {/* Show ellipsis and last page if needed - Hide on very small screens */}
-                {pagination &&
-                  pagination.totalPages > 3 &&
-                  pagination.currentPage < pagination.totalPages - 2 &&
-                  window.innerWidth > 314 && (
-                    <>
-                      <span className="text-slate-400 px-1 xs:px-2 text-xs xs:text-sm">
-                        ...
-                      </span>
-                      <button
-                        onClick={() =>
-                          handlePageChange(pagination.totalPages - 1)
-                        }
-                        className="w-8 h-8 xs:w-10 xs:h-10 sm:w-12 sm:h-12 bg-white/80 text-slate-700 hover:bg-indigo-500 hover:text-white rounded-lg xs:rounded-xl sm:rounded-2xl font-bold transition-all duration-300 shadow-lg text-xs xs:text-sm sm:text-base"
-                      >
-                        {pagination.totalPages}
-                      </button>
-                    </>
-                  )}
+                <div className="flex items-center gap-1 xs:gap-2">
+                  {generatePageNumbers().map((pageNumber) => (
+                    <button
+                      key={pageNumber}
+                      onClick={() => handlePageChange(pageNumber)}
+                      className={`flex items-center justify-center w-8 h-8 xs:w-10 xs:h-10 sm:w-12 sm:h-12 rounded-lg xs:rounded-xl shadow-lg border transition-all duration-300 text-xs xs:text-sm sm:text-base font-semibold ${
+                        pageNumber === pagination.currentPage
+                          ? "bg-gradient-to-r from-indigo-500 to-purple-600 text-white border-indigo-400 hover:from-indigo-600 hover:to-purple-700"
+                          : "bg-white/80 backdrop-blur-sm text-slate-600 border-slate-200/50 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600"
+                      }`}
+                    >
+                      {pageNumber + 1}
+                    </button>
+                  ))}
+                </div>
 
                 {/* Next Button */}
                 <button
                   onClick={() => handlePageChange(pagination.currentPage + 1)}
                   disabled={!pagination.hasNextPage}
-                  className={`w-8 h-8 xs:w-10 xs:h-10 sm:w-12 sm:h-12 rounded-lg xs:rounded-xl sm:rounded-2xl flex items-center justify-center transition-all duration-300 ${
-                    pagination.hasNextPage
-                      ? "bg-white/80 text-slate-700 hover:bg-indigo-500 hover:text-white shadow-lg"
-                      : "bg-slate-200 text-slate-400 cursor-not-allowed"
-                  }`}
+                  className="flex items-center justify-center w-8 h-8 xs:w-10 xs:h-10 sm:w-12 sm:h-12 bg-white/80 backdrop-blur-sm rounded-lg xs:rounded-xl shadow-lg border border-slate-200/50 hover:bg-indigo-50 hover:border-indigo-200 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-300 disabled:hover:bg-white/80 disabled:hover:border-slate-200/50"
                 >
                   <svg
-                    className="w-3 h-3 xs:w-4 xs:h-4 sm:w-5 sm:h-5"
+                    className="w-3 h-3 xs:w-4 xs:h-4 sm:w-5 sm:h-5 text-slate-600"
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -523,36 +524,6 @@ export default function NewsSearchClient({ query }: NewsSearchClientProps) {
                     />
                   </svg>
                 </button>
-              </div>
-
-              {/* Total Results Info */}
-              <div className="px-4 xs:px-6 sm:px-8 py-2 xs:py-3 sm:py-4 bg-white/80 backdrop-blur-sm rounded-xl xs:rounded-2xl shadow-lg border border-slate-200/50">
-                <span className="text-xs xs:text-sm font-semibold text-slate-600">
-                  {pagination.totalCount} results
-                </span>
-              </div>
-            </div>
-
-            {/* Results Info - Detailed */}
-            <div className="mt-4 xs:mt-6 sm:mt-10 text-center">
-              <div className="inline-block px-4 xs:px-6 sm:px-8 py-2 xs:py-3 sm:py-4 bg-white/80 backdrop-blur-sm rounded-xl xs:rounded-2xl shadow-lg border border-slate-200/50">
-                <span className="text-xs xs:text-sm text-slate-600 leading-relaxed">
-                  Showing {pagination.currentPage * postsPerPage + 1} -{" "}
-                  {Math.min(
-                    (pagination.currentPage + 1) * postsPerPage,
-                    pagination.totalCount
-                  )}{" "}
-                  of {pagination.totalCount} articles
-                  {query && (
-                    <span className="block xs:inline">
-                      {" "}
-                      for{" "}
-                      <span className="font-semibold break-words">
-                        "{query}"
-                      </span>
-                    </span>
-                  )}
-                </span>
               </div>
             </div>
           </>
