@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import NewsSearchClient from "@/components/NewsSearchClient";
+import NewsSearchClients from "@/components/NewsSearchClient";
 import NewsSearchPageSkeleton from "@/components/NewsSearchPageSkeleton";
 
 // Fix: Make generateMetadata async and properly handle searchParams as Promise
@@ -31,7 +31,7 @@ export default async function NewsSearchPage({ searchParams }: PageProps) {
 
   return (
     <Suspense fallback={<NewsSearchPageSkeleton />}>
-      <NewsSearchClient query={query} />
+      <NewsSearchClients query={query} />
     </Suspense>
   );
 }

@@ -1,6 +1,7 @@
 // components/NewsSearchClient.tsx
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { IPost } from "@/interface/post";
 import Link from "next/link";
 import NewsSearchPageSkeleton from "./NewsSearchPageSkeleton";
@@ -85,11 +86,11 @@ async function getNewsArticles(
   }
 }
 
-interface NewsSearchClientProps {
-  query: string;
-}
+// Component that uses searchParams - this needs to be inside Suspense
+function NewsSearchContent() {
+  const searchParams = useSearchParams();
+  const query = searchParams.get("q") || "";
 
-export default function NewsSearchClient({ query }: NewsSearchClientProps) {
   const [newsArticles, setNewsArticles] = useState<IPost[]>([]);
   const [pagination, setPagination] = useState<
     ApiResponse["pagination"] | null
@@ -530,5 +531,14 @@ export default function NewsSearchClient({ query }: NewsSearchClientProps) {
         )}
       </div>
     </div>
+  );
+}
+
+// Main component that provides the Suspense wrapper
+export default function NewsSearchClient() {
+  return (
+    <Suspense fallback={<NewsSearchPageSkeleton />}>
+      <NewsSearchContent />
+    </Suspense>
   );
 }
