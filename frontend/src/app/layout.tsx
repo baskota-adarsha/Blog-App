@@ -5,7 +5,6 @@ import "./globals.css";
 import { Footer } from "@/components/Footer";
 
 import { Header } from "@/components/header";
-import { Suspense } from "react";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -70,7 +69,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <Header />
-        <Suspense>{children}</Suspense>
+        {children}
         <Footer />
       </body>
     </html>
