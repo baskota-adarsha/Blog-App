@@ -32,10 +32,8 @@ export default async function NewsSearchPage({ searchParams }: PageProps) {
   const query = resolvedSearchParams.q || "";
 
   return (
-    <div>
-      <Suspense fallback={<NewsSearchPageSkeleton />}>
-        <NewsSearchClient query={query} />
-      </Suspense>
-    </div>
+    <Suspense fallback={<NewsSearchPageSkeleton />}>
+      <NewsSearchClient query={query} />
+    </Suspense>
   );
 }
