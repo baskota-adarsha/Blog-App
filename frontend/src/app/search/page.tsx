@@ -1,37 +1,8 @@
+// page.tsx
 import { Suspense } from "react";
-import type { Metadata } from "next";
-import NewsSearchClients from "@/components/NewsSearchClient";
+import NewsSearchClient from "@/components/NewsSearchClient"; // This now handles everything
 import NewsSearchPageSkeleton from "@/components/NewsSearchPageSkeleton";
 
-// Fix: Make generateMetadata async and properly handle searchParams as Promise
-export async function generateMetadata({
-  searchParams,
-}: {
-  searchParams: Promise<{ q?: string }>;
-}): Promise<Metadata> {
-  const resolvedSearchParams = await searchParams;
-  const query = resolvedSearchParams.q || "";
-
-  return {
-    title: query ? `Search Results for "${query}"` : "Search Results",
-    description: query
-      ? `Search results for "${query}"`
-      : "Search for news articles",
-  };
-}
-
-interface PageProps {
-  searchParams: Promise<{ q?: string }>;
-}
-
-// Fix: Make the page component async and await searchParams
-export default async function NewsSearchPage({ searchParams }: PageProps) {
-  const resolvedSearchParams = await searchParams;
-  const query = resolvedSearchParams.q || "";
-
-  return (
-    <Suspense fallback={<NewsSearchPageSkeleton />}>
-      <NewsSearchClients query={query} />
-    </Suspense>
-  );
+export default function NewsSearchPage() {
+  return <NewsSearchClient />; // No need to pass query as prop
 }
