@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Mail, MapPin, Phone } from "lucide-react";
+import { Suspense } from "react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,31 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Contact",
 };
+
+// Loading fallback for SendMessage component
+function SendMessageSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <div className="h-4 w-16 bg-gray-200 rounded animate-pulse" />
+        <div className="h-10 w-full bg-gray-200 rounded animate-pulse" />
+      </div>
+      <div className="space-y-2">
+        <div className="h-4 w-16 bg-gray-200 rounded animate-pulse" />
+        <div className="h-10 w-full bg-gray-200 rounded animate-pulse" />
+      </div>
+      <div className="space-y-2">
+        <div className="h-4 w-20 bg-gray-200 rounded animate-pulse" />
+        <div className="h-10 w-full bg-gray-200 rounded animate-pulse" />
+      </div>
+      <div className="space-y-2">
+        <div className="h-4 w-16 bg-gray-200 rounded animate-pulse" />
+        <div className="h-32 w-full bg-gray-200 rounded animate-pulse" />
+      </div>
+      <div className="h-10 w-full bg-gray-200 rounded animate-pulse" />
+    </div>
+  );
+}
 
 export default function ContactPage() {
   const faqs = [
@@ -73,12 +99,14 @@ export default function ContactPage() {
       <section className="py-12 sm:py-16 lg:py-20" id="contact-form">
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="mx-auto grid max-w-7xl gap-8 lg:gap-12 xl:grid-cols-2">
-            {/* Contact Form */}
+            {/* Contact Form - Wrapped in Suspense */}
             <div className="order-2 xl:order-1">
               <h2 className="mb-6 text-xl font-bold sm:text-2xl lg:text-3xl">
                 Send Us a Message
               </h2>
-              <SendMessage />
+              <Suspense fallback={<SendMessageSkeleton />}>
+                <SendMessage />
+              </Suspense>
             </div>
 
             {/* Contact Information */}

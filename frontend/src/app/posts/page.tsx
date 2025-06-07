@@ -54,6 +54,7 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
 
       <div className="container mx-auto px-4 py-12 md:px-6">
         <div className="mb-8">
+          {/* Pass currentCategory as prop to avoid useSearchParams in CategoryFilter */}
           <CategoryFilter currentCategory={currentCategory} />
         </div>
 

@@ -3,13 +3,14 @@ import type { Metadata } from "next";
 import NewsSearchClient from "@/components/NewsSearchClient";
 import NewsSearchPageSkeleton from "@/components/NewsSearchPageSkeleton";
 
-// Fix: Make generateMetadata async and properly handle searchParams
+// Fix: Make generateMetadata async and properly handle searchParams as Promise
 export async function generateMetadata({
   searchParams,
 }: {
-  searchParams: { q?: string };
+  searchParams: Promise<{ q?: string }>;
 }): Promise<Metadata> {
-  const query = searchParams.q || "";
+  const resolvedSearchParams = await searchParams;
+  const query = resolvedSearchParams.q || "";
 
   return {
     title: query ? `Search Results for "${query}"` : "Search Results",
@@ -20,12 +21,13 @@ export async function generateMetadata({
 }
 
 interface PageProps {
-  searchParams: { q?: string };
+  searchParams: Promise<{ q?: string }>;
 }
 
-// Fix: Make the page component properly handle searchParams
-export default function NewsSearchPage({ searchParams }: PageProps) {
-  const query = searchParams.q || "";
+// Fix: Make the page component async and await searchParams
+export default async function NewsSearchPage({ searchParams }: PageProps) {
+  const resolvedSearchParams = await searchParams;
+  const query = resolvedSearchParams.q || "";
 
   return (
     <Suspense fallback={<NewsSearchPageSkeleton />}>

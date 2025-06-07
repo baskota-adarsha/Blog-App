@@ -118,6 +118,37 @@ async function getPost(slug: string) {
   }
 }
 
+// Function to get all posts for generateStaticParams
+async function getAllPosts() {
+  try {
+    const API_URL = process.env.NEXT_PUBLIC_API_URL;
+    const response = await fetch(`${API_URL}/api/getPosts`);
+    if (!response.ok) {
+      return [];
+    }
+    const data = await response.json();
+    return data.posts || [];
+  } catch (error) {
+    console.error("Error fetching all posts:", error);
+    return [];
+  }
+}
+
+// ✅ ADD: generateStaticParams function - required for static export
+export async function generateStaticParams() {
+  try {
+    const posts = await getAllPosts();
+
+    return posts.map((post: any) => ({
+      slug: post._id || post.slug, // Use _id or slug depending on your data structure
+    }));
+  } catch (error) {
+    console.error("Error in generateStaticParams:", error);
+    // Return empty array as fallback
+    return [];
+  }
+}
+
 // ✅ Fix: Dynamic metadata generation - await params
 export async function generateMetadata({
   params,
