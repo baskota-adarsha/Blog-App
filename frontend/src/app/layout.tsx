@@ -69,7 +69,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <Header />
-        <Suspense> {children}</Suspense>
+        <Suspense fallback={<div>Loading...</div>}> {children}</Suspense>
 
         <Footer />
       </body>
