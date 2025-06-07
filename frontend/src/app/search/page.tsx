@@ -26,19 +26,16 @@ interface PageProps {
   }>;
 }
 
-// Create a wrapper component for the Suspense boundary
-function NewsSearchWrapper({ query }: { query: string }) {
-  return (
-    <Suspense fallback={<NewsSearchPageSkeleton />}>
-      <NewsSearchClient query={query} />
-    </Suspense>
-  );
-}
-
 // ✅ Fix: Make the page component async and await searchParams
 export default async function NewsSearchPage({ searchParams }: PageProps) {
   const resolvedSearchParams = await searchParams;
   const query = resolvedSearchParams.q || "";
 
-  return <NewsSearchWrapper query={query} />;
+  return (
+    <div>
+      <Suspense fallback={<NewsSearchPageSkeleton />}>
+        <NewsSearchClient query={query} />
+      </Suspense>
+    </div>
+  );
 }
