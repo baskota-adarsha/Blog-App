@@ -133,8 +133,9 @@ export default function NewsSearchClient({ query }: NewsSearchClientProps) {
     if (!pagination || pagination.totalPages <= 1) return [];
 
     const pages = [];
-    // For very small screens, show fewer page numbers
-    const maxVisiblePages = window.innerWidth <= 314 ? 3 : 5;
+    // Check if window is available (client-side) before accessing innerWidth
+    const maxVisiblePages =
+      typeof window !== "undefined" && window.innerWidth <= 314 ? 3 : 5;
     const currentPage = pagination.currentPage;
     const totalPages = pagination.totalPages;
 
@@ -483,6 +484,7 @@ export default function NewsSearchClient({ query }: NewsSearchClientProps) {
                 {pagination &&
                   pagination.totalPages > 3 &&
                   pagination.currentPage < pagination.totalPages - 2 &&
+                  typeof window !== "undefined" &&
                   window.innerWidth > 314 && (
                     <>
                       <span className="text-slate-400 px-1 xs:px-2 text-xs xs:text-sm">
