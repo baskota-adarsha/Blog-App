@@ -23,7 +23,7 @@ async function getPosts(category?: string): Promise<IPost[]> {
     const API_URL = process.env.NEXT_PUBLIC_API_URL;
     const response = await fetch(
       category === "All"
-        ? `${API_URL}/api/getPosts?limit=20`
+        ? `${API_URL}/api/getPosts?limit=30`
         : `${API_URL}/api/getPosts?search=${category}`,
       {
         next: { revalidate: 43200 },
