@@ -1,7 +1,7 @@
 "use client";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
-import { Menu, SearchIcon, X } from "lucide-react";
+import { Menu, SearchIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,

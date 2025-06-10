@@ -34,11 +34,6 @@ const SearchComponent = ({
     }
   };
 
-  const handleClear = () => {
-    setQuery("");
-    inputRef.current?.focus();
-  };
-
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
       onClose?.();
