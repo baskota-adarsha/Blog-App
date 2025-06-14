@@ -12,7 +12,7 @@ async function getRelatedPosts(currentPostId: string): Promise<IPost[]> {
     const response = await fetch(
       `${API_URL}/api/getPosts?related=${currentPostId}`,
       {
-        next: { revalidate: 43200 },
+        next: { revalidate: 3600 },
       }
     );
     if (!response.ok) {

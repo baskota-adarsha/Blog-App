@@ -50,7 +50,7 @@ async function getRecentPosts(): Promise<IPost[]> {
     const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
     const response = await fetch(`${API_URL}/api/getPosts?recent=true`, {
-      next: { revalidate: 1 },
+      next: { revalidate: 3600 },
     });
     if (!response.ok) {
       return [];

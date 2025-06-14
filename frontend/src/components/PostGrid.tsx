@@ -26,7 +26,7 @@ async function getPosts(category?: string): Promise<IPost[]> {
         ? `${API_URL}/api/getPosts?limit=30`
         : `${API_URL}/api/getPosts?search=${category}`,
       {
-        next: { revalidate: 43200 },
+        next: { revalidate: 3600 },
       }
     );
     if (!response.ok) {
