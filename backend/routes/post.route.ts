@@ -7,6 +7,9 @@ import {
   manualPostRefresh,
   getSchedulerStatus,
   stopPostScheduler,
+  schedulerHealthCheck,
+  testCronExecution,
+  restartPostScheduler,
 } from "../controller/fetchPosts";
 
 const router = express.Router();
@@ -17,7 +20,14 @@ router.get("/getPosts", getPosts);
 
 // New scheduler routes
 router.get("/refresh", manualPostRefresh);
+
+router.get("/scheduler/health", schedulerHealthCheck);
 router.get("/scheduler-status", getSchedulerStatus);
+router.post("/scheduler/test", testCronExecution);
+
+// Restart scheduler
+router.post("/scheduler/restart", restartPostScheduler);
+
 router.post("/stop-scheduler", (req, res) => {
   stopPostScheduler();
   res.json({ message: "Scheduler stopped" });

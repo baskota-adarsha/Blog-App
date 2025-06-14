@@ -206,12 +206,16 @@ function extractDescription(content: string): string {
   return description;
 }
 
+// Enhanced fetchPostsAndSave with better logging and error handling
 export const fetchPostsAndSave = async (
   req?: Request,
   res?: Response
 ): Promise<any> => {
+  const startTime = new Date();
   try {
-    console.log("🔄 Starting scheduled post fetch and cleanup...");
+    console.log(
+      `🔄 Starting scheduled post fetch and cleanup at ${startTime.toISOString()}`
+    );
 
     if (!process.env.news_api) {
       const error = "News API URL not defined in environment variables";
@@ -233,7 +237,12 @@ export const fetchPostsAndSave = async (
 
     // Step 2: Fetch new posts from API
     console.log("📡 Fetching new posts from API...");
-    const response = await axios.get(process.env.news_api);
+    const response = await axios.get(process.env.news_api, {
+      timeout: 30000, // 30 second timeout
+      headers: {
+        "User-Agent": "NewsApp/1.0",
+      },
+    });
     const posts = response.data.articles;
 
     if (!posts || posts.length === 0) {
@@ -312,7 +321,9 @@ export const fetchPostsAndSave = async (
       }
     }
 
-    const successMessage = `Successfully processed ${savedPosts.length} articles`;
+    const endTime = new Date();
+    const duration = endTime.getTime() - startTime.getTime();
+    const successMessage = `Successfully processed ${savedPosts.length} articles in ${duration}ms`;
     console.log(`🎉 ${successMessage}`);
 
     const result = {
@@ -320,6 +331,8 @@ export const fetchPostsAndSave = async (
       message: successMessage,
       count: savedPosts.length,
       posts: savedPosts,
+      executionTime: duration,
+      timestamp: endTime.toISOString(),
     };
 
     if (res) {
@@ -328,14 +341,19 @@ export const fetchPostsAndSave = async (
 
     return result;
   } catch (error: any) {
-    const errorMessage = `Error in fetchPostsAndSave: ${error.message}`;
+    const endTime = new Date();
+    const duration = endTime.getTime() - startTime.getTime();
+    const errorMessage = `Error in fetchPostsAndSave after ${duration}ms: ${error.message}`;
     console.error("❌", errorMessage);
+    console.error("Stack trace:", error.stack);
 
     if (res) {
       return res.status(500).json({
         success: false,
         message: "Something went wrong",
         error: error.message,
+        executionTime: duration,
+        timestamp: endTime.toISOString(),
       });
     }
 
@@ -343,49 +361,104 @@ export const fetchPostsAndSave = async (
   }
 };
 
-// Store the cron task reference for status tracking
+// Store the cron task reference and execution history
 let scheduledTask: any = null;
+let lastExecution: Date | null = null;
+let executionHistory: Array<{
+  timestamp: Date;
+  success: boolean;
+  message: string;
+}> = [];
 
-// Scheduled task to run every 12 hours
+// Add execution to history (keep last 10 executions)
+const addToHistory = (success: boolean, message: string) => {
+  executionHistory.unshift({
+    timestamp: new Date(),
+    success,
+    message,
+  });
+
+  // Keep only last 10 executions
+  if (executionHistory.length > 10) {
+    executionHistory = executionHistory.slice(0, 10);
+  }
+};
+
+// Enhanced scheduler with better error handling and logging
 export const startPostScheduler = () => {
-  // Run every 12 hours (at 00:00 and 12:00)
+  console.log("🔧 Initializing post scheduler...");
+
+  // Validate cron pattern
+  const cronPattern = "0 0,12 * * *";
+  if (!cron.validate(cronPattern)) {
+    console.error("❌ Invalid cron pattern:", cronPattern);
+    return;
+  }
+
+  // Create scheduled task
   scheduledTask = cron.schedule(
-    "0 0,12 * * *",
+    cronPattern,
     async () => {
+      const executionStart = new Date();
       console.log(
-        "⏰ Scheduled post fetch triggered at:",
-        new Date().toISOString()
+        `⏰ Scheduled post fetch triggered at: ${executionStart.toISOString()}`
       );
+      console.log(`📊 System time: ${new Date().toString()}`);
+      console.log(`🌍 UTC time: ${new Date().toUTCString()}`);
 
       try {
-        await fetchPostsAndSave();
-        console.log("✅ Scheduled post fetch completed successfully");
+        const result = await fetchPostsAndSave();
+        lastExecution = executionStart;
+        const successMessage = `Scheduled post fetch completed successfully - ${result.count} posts processed`;
+        console.log(`✅ ${successMessage}`);
+        addToHistory(true, successMessage);
       } catch (error: any) {
-        console.error("❌ Scheduled post fetch failed:", error.message);
+        lastExecution = executionStart;
+        const errorMessage = `Scheduled post fetch failed: ${error.message}`;
+        console.error(`❌ ${errorMessage}`);
+        console.error("Full error:", error);
+        addToHistory(false, errorMessage);
       }
     },
     {
-      timezone: "UTC", // Adjust timezone as needed
+      timezone: "UTC",
     }
   );
 
-  // Start the task
-  scheduledTask.start();
+  // Start the task (it starts automatically when created)
+  try {
+    console.log("🚀 Post scheduler created and started successfully");
+    console.log(`⏰ Next execution times (UTC): 00:00 and 12:00 daily`);
+    console.log(`🕐 Current UTC time: ${new Date().toUTCString()}`);
 
-  console.log("🚀 Post scheduler started - will run every 12 hours");
-
-  // Optional: Run immediately on startup
-  // Uncomment the next line if you want to fetch posts immediately when the server starts
-  // fetchPostsAndSave().catch(console.error);
+    // Log when the next execution will be
+    const now = new Date();
+    const nextHour = now.getUTCHours() < 12 ? 12 : 24;
+    const nextExecution = new Date(now);
+    nextExecution.setUTCHours(nextHour === 24 ? 0 : nextHour, 0, 0, 0);
+    if (nextHour === 24) {
+      nextExecution.setUTCDate(nextExecution.getUTCDate() + 1);
+    }
+    console.log(`⏭️ Next scheduled execution: ${nextExecution.toISOString()}`);
+  } catch (error: any) {
+    console.error("❌ Failed to start scheduler:", error.message);
+  }
 };
 
-// Manual trigger endpoint (useful for testing or manual refresh)
+// Manual trigger endpoint with enhanced logging
 export const manualPostRefresh = async (req: Request, res: Response) => {
   try {
-    console.log("🔄 Manual post refresh triggered");
-    await fetchPostsAndSave(req, res);
+    console.log(
+      `🔄 Manual post refresh triggered at ${new Date().toISOString()}`
+    );
+    const result = await fetchPostsAndSave(req, res);
+    addToHistory(
+      true,
+      `Manual refresh completed - ${result.count} posts processed`
+    );
   } catch (error: any) {
     console.error("❌ Manual post refresh failed:", error.message);
+    addToHistory(false, `Manual refresh failed: ${error.message}`);
     res.status(500).json({
       success: false,
       message: "Manual refresh failed",
@@ -394,24 +467,107 @@ export const manualPostRefresh = async (req: Request, res: Response) => {
   }
 };
 
-// Get scheduler status
+// Enhanced scheduler status with execution history
 export const getSchedulerStatus = (req: Request, res: Response) => {
   const isActive = scheduledTask !== null;
+  const now = new Date();
+
+  // Calculate next execution time
+  const currentHour = now.getUTCHours();
+  const nextHour = currentHour < 12 ? 12 : 24;
+  const nextExecution = new Date(now);
+  nextExecution.setUTCHours(nextHour === 24 ? 0 : nextHour, 0, 0, 0);
+  if (nextHour === 24) {
+    nextExecution.setUTCDate(nextExecution.getUTCDate() + 1);
+  }
 
   res.json({
     schedulerActive: isActive,
     taskStatus: scheduledTask ? "running" : "stopped",
-    nextRun: "Every 12 hours at 00:00 and 12:00 UTC",
-    lastCheck: new Date().toISOString(),
+    cronPattern: "0 0,12 * * *",
+    timezone: "UTC",
+    currentTime: now.toISOString(),
+    currentUTCTime: now.toUTCString(),
+    nextScheduledRun: nextExecution.toISOString(),
+    lastExecution: lastExecution?.toISOString() || "Never",
+    executionHistory: executionHistory,
+    serverUptime: process.uptime(),
+    nodeVersion: process.version,
+    platform: process.platform,
   });
 };
 
-// Optional: Stop the scheduler (useful for cleanup)
+// Health check endpoint for the scheduler
+export const schedulerHealthCheck = (req: Request, res: Response) => {
+  const isHealthy = scheduledTask !== null;
+  const recentFailures = executionHistory
+    .filter((exec) => !exec.success)
+    .filter(
+      (exec) => Date.now() - exec.timestamp.getTime() < 24 * 60 * 60 * 1000
+    ); // Last 24 hours
+
+  res.status(isHealthy ? 200 : 503).json({
+    healthy: isHealthy,
+    schedulerRunning: scheduledTask !== null,
+    recentFailures: recentFailures.length,
+    lastExecution: lastExecution?.toISOString() || "Never",
+    uptime: process.uptime(),
+  });
+};
+
+// Test cron execution (for debugging)
+export const testCronExecution = async (req: Request, res: Response) => {
+  try {
+    console.log("🧪 Testing cron execution manually...");
+    const result = await fetchPostsAndSave();
+    res.json({
+      success: true,
+      message: "Test execution completed",
+      result: result,
+    });
+  } catch (error: any) {
+    console.error("❌ Test execution failed:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Test execution failed",
+      error: error.message,
+    });
+  }
+};
+
+// Stop scheduler with cleanup
 export const stopPostScheduler = () => {
   if (scheduledTask) {
-    scheduledTask.stop();
-    scheduledTask = null;
-    console.log("🛑 Post scheduler stopped");
+    try {
+      scheduledTask.stop();
+      scheduledTask.destroy();
+      scheduledTask = null;
+      console.log("🛑 Post scheduler stopped successfully");
+    } catch (error: any) {
+      console.error("❌ Error stopping scheduler:", error.message);
+    }
+  } else {
+    console.log("⚠️ No active scheduler to stop");
+  }
+};
+
+// Restart scheduler
+export const restartPostScheduler = (req: Request, res: Response) => {
+  try {
+    console.log("🔄 Restarting post scheduler...");
+    stopPostScheduler();
+    startPostScheduler();
+    res.json({
+      success: true,
+      message: "Scheduler restarted successfully",
+    });
+  } catch (error: any) {
+    console.error("❌ Failed to restart scheduler:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Failed to restart scheduler",
+      error: error.message,
+    });
   }
 };
 export const getPosts = async (req: Request, res: Response) => {
