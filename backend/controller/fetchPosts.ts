@@ -6,7 +6,6 @@ import * as cheerio from "cheerio";
 import { Request, Response } from "express";
 import cron from "node-cron";
 import mongoose from "mongoose";
-import { RequestHandler } from "express";
 dotenv.config();
 
 // Check if MongoDB is connected
@@ -191,10 +190,22 @@ function extractDescription(content: string): string {
   return description;
 }
 
-export const fetchPostsAndSave: RequestHandler = async (
+interface FetchResult {
+  success: boolean;
+  message: string;
+  count: number;
+  totalAttempted: number;
+  failed: number;
+  failedPosts: any[];
+  posts: IPost[];
+  executionTime: number;
+  timestamp: string;
+}
+
+export const fetchPostsAndSave = async (
   req?: Request,
   res?: Response
-): Promise<any> => {
+): Promise<FetchResult | void> => {
   const startTime = new Date();
   
   try {
@@ -213,10 +224,13 @@ export const fetchPostsAndSave: RequestHandler = async (
       if (!connected) {
         const errorMsg = "MongoDB connection failed after 30 seconds";
         console.error("❌", errorMsg);
-        if (res) return res.status(503).json({ 
-          success: false, 
-          message: errorMsg 
-        });
+        if (res) {
+          res.status(503).json({ 
+            success: false, 
+            message: errorMsg 
+          });
+          return;
+        }
         throw new Error(errorMsg);
       }
     }
@@ -224,7 +238,10 @@ export const fetchPostsAndSave: RequestHandler = async (
     if (!process.env.news_api) {
       const error = "News API URL not defined in environment variables";
       console.error("❌", error);
-      if (res) return res.status(400).json({ success: false, message: error });
+      if (res) {
+        res.status(400).json({ success: false, message: error });
+        return;
+      }
       throw new Error(error);
     }
 
@@ -238,7 +255,7 @@ export const fetchPostsAndSave: RequestHandler = async (
         deleteAttempts++;
         console.log(`🗑️ Attempting to clear old posts (attempt ${deleteAttempts}/${maxDeleteAttempts})...`);
         
-        const result = await PostModel.deleteMany({}).maxTimeMS(20000);
+        const result = await PostModel.deleteMany({});
         deletedCount = result.deletedCount || 0;
         console.log(`🗑️ Removed ${deletedCount} old posts from database`);
         break;
@@ -268,8 +285,22 @@ export const fetchPostsAndSave: RequestHandler = async (
     if (!posts || posts.length === 0) {
       const message = "No posts found from API";
       console.log("⚠️", message);
-      if (res) return res.status(200).json({ success: true, message, count: 0 });
-      return { success: true, message, count: 0 };
+      const emptyResult: FetchResult = {
+        success: true,
+        message,
+        count: 0,
+        totalAttempted: 0,
+        failed: 0,
+        failedPosts: [],
+        posts: [],
+        executionTime: Date.now() - startTime.getTime(),
+        timestamp: new Date().toISOString(),
+      };
+      if (res) {
+        res.status(200).json(emptyResult);
+        return;
+      }
+      return emptyResult;
     }
 
     console.log(`📰 Found ${posts.length} posts to process`);
@@ -330,7 +361,7 @@ export const fetchPostsAndSave: RequestHandler = async (
         source: post.source || { id: null, name: "Unknown Source" },
       });
 
-      // Retry logic for saving
+      // Retry logic for saving with timeout
       let saveAttempts = 0;
       const maxSaveAttempts = 3;
       let saved = false;
@@ -338,7 +369,15 @@ export const fetchPostsAndSave: RequestHandler = async (
       while (saveAttempts < maxSaveAttempts && !saved) {
         try {
           saveAttempts++;
-          await newPost.save({ maxTimeMS: 15000 });
+          
+          // Save with timeout using Promise.race
+          await Promise.race([
+            newPost.save(),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error("Save timeout after 15s")), 15000)
+            )
+          ]);
+          
           savedPosts.push(newPost);
           console.log(`✅ Saved: ${post.title?.substring(0, 50)}...`);
           saved = true;
@@ -369,7 +408,7 @@ export const fetchPostsAndSave: RequestHandler = async (
         failedPosts.map(p => p.title));
     }
 
-    const result = {
+    const result: FetchResult = {
       success: true,
       message: successMessage,
       count: savedPosts.length,
@@ -382,7 +421,8 @@ export const fetchPostsAndSave: RequestHandler = async (
     };
 
     if (res) {
-      return res.status(200).json(result);
+      res.status(200).json(result);
+      return;
     }
 
     return result;
@@ -394,13 +434,14 @@ export const fetchPostsAndSave: RequestHandler = async (
     console.error("Stack trace:", error.stack);
 
     if (res) {
-      return res.status(500).json({
+      res.status(500).json({
         success: false,
         message: "Something went wrong",
         error: error.message,
         executionTime: duration,
         timestamp: endTime.toISOString(),
       });
+      return;
     }
 
     throw error;
@@ -467,9 +508,11 @@ export const startPostScheduler = async () => {
       try {
         const result = await fetchPostsAndSave();
         lastExecution = executionStart;
-        const successMessage = `Scheduled post fetch completed - ${result.count}/${result.totalAttempted} posts saved`;
-        console.log(`✅ ${successMessage}`);
-        addToHistory(true, successMessage);
+        if (result) {
+          const successMessage = `Scheduled post fetch completed - ${result.count}/${result.totalAttempted} posts saved`;
+          console.log(`✅ ${successMessage}`);
+          addToHistory(true, successMessage);
+        }
       } catch (error: any) {
         lastExecution = executionStart;
         const errorMessage = `Scheduled post fetch failed: ${error.message}`;
@@ -501,24 +544,27 @@ export const startPostScheduler = async () => {
   }
 };
 
-export const manualPostRefresh = async (req: Request, res: Response) => {
+export const manualPostRefresh = async (req: Request, res: Response): Promise<void> => {
   try {
     console.log(
       `🔄 Manual post refresh triggered at ${new Date().toISOString()}`
     );
     
     if (!isMongoConnected()) {
-      return res.status(503).json({
+      res.status(503).json({
         success: false,
         message: "MongoDB is not connected",
       });
+      return;
     }
     
     const result = await fetchPostsAndSave(req, res);
-    addToHistory(
-      true,
-      `Manual refresh completed - ${result.count} posts processed`
-    );
+    if (result) {
+      addToHistory(
+        true,
+        `Manual refresh completed - ${result.count} posts processed`
+      );
+    }
   } catch (error: any) {
     console.error("❌ Manual post refresh failed:", error.message);
     addToHistory(false, `Manual refresh failed: ${error.message}`);
@@ -530,7 +576,7 @@ export const manualPostRefresh = async (req: Request, res: Response) => {
   }
 };
 
-export const getSchedulerStatus = (req: Request, res: Response) => {
+export const getSchedulerStatus = (req: Request, res: Response): void => {
   const isActive = scheduledTask !== null;
   const now = new Date();
 
@@ -561,7 +607,7 @@ export const getSchedulerStatus = (req: Request, res: Response) => {
   });
 };
 
-export const schedulerHealthCheck = (req: Request, res: Response) => {
+export const schedulerHealthCheck = (req: Request, res: Response): void => {
   const isHealthy = scheduledTask !== null && isMongoConnected();
   const recentFailures = executionHistory
     .filter((exec) => !exec.success)
@@ -580,15 +626,16 @@ export const schedulerHealthCheck = (req: Request, res: Response) => {
   });
 };
 
-export const testCronExecution = async (req: Request, res: Response) => {
+export const testCronExecution = async (req: Request, res: Response): Promise<void> => {
   try {
     console.log("🧪 Testing cron execution manually...");
     
     if (!isMongoConnected()) {
-      return res.status(503).json({
+      res.status(503).json({
         success: false,
         message: "MongoDB is not connected",
       });
+      return;
     }
     
     const result = await fetchPostsAndSave();
@@ -607,7 +654,7 @@ export const testCronExecution = async (req: Request, res: Response) => {
   }
 };
 
-export const stopPostScheduler = () => {
+export const stopPostScheduler = (): void => {
   if (scheduledTask) {
     try {
       scheduledTask.stop();
@@ -622,7 +669,7 @@ export const stopPostScheduler = () => {
   }
 };
 
-export const restartPostScheduler = async (req: Request, res: Response) => {
+export const restartPostScheduler = async (req: Request, res: Response): Promise<void> => {
   try {
     console.log("🔄 Restarting post scheduler...");
     stopPostScheduler();
@@ -641,14 +688,15 @@ export const restartPostScheduler = async (req: Request, res: Response) => {
   }
 };
 
-export const getPosts = async (req: Request, res: Response) => {
+export const getPosts = async (req: Request, res: Response): Promise<void> => {
   try {
     // Check MongoDB connection
     if (!isMongoConnected()) {
-      return res.status(503).json({ 
+      res.status(503).json({ 
         message: "Database not available",
         mongoConnected: false 
       });
+      return;
     }
 
     const isFeatured = req.query.featured === "true";
