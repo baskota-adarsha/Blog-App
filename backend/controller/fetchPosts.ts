@@ -5,12 +5,33 @@ import { IPost } from "../model/Blog.model";
 import * as cheerio from "cheerio";
 import { Request, Response } from "express";
 import cron from "node-cron";
+import mongoose from "mongoose";
 dotenv.config();
+
+// Check if MongoDB is connected
+function isMongoConnected(): boolean {
+  return mongoose.connection.readyState === 1;
+}
+
+// Wait for MongoDB connection with timeout
+async function waitForMongoConnection(timeoutMs: number = 30000): Promise<boolean> {
+  const startTime = Date.now();
+  
+  while (Date.now() - startTime < timeoutMs) {
+    if (isMongoConnected()) {
+      console.log("✅ MongoDB connection verified");
+      return true;
+    }
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+  
+  console.error("❌ MongoDB connection timeout");
+  return false;
+}
 
 // Function to scrape full content from article URL with focus on The Verge
 async function scrapeFullContent(url: string): Promise<string> {
   try {
-    // Set custom headers to mimic a real browser and avoid being blocked
     const headers = {
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
@@ -22,68 +43,50 @@ async function scrapeFullContent(url: string): Promise<string> {
     };
 
     const response = await axios.get(url, { headers, timeout: 10000 });
-
     const $ = cheerio.load(response.data);
 
     let content = "";
 
-    // Special handling for The Verge
     if (url.includes("theverge.com")) {
       content = extractVergeContent($);
     } else {
-      // Generic extraction for other sites
       content = extractGenericContent($);
     }
 
-    // If content is still empty or too short, try fallback methods
     if (!content || content.length < 200) {
       content = extractFallbackContent($);
     }
 
-    // Clean up the content
     content = cleanContent(content);
-
     return content || "Could not extract full content from the URL";
   } catch (error: any) {
-    console.error(`Error scraping content from ${url}:`, error);
+    console.error(`Error scraping content from ${url}:`, error.message);
     return `Error fetching full content: ${error.message}`;
   }
 }
 
-// Specific extractor for The Verge
 function extractVergeContent($: cheerio.CheerioAPI): string {
-  // The Verge uses several different article layouts, so we need to check multiple selectors
-
-  // First try the main content container for newer articles
   let content = "";
-
-  // Primary content selectors for The Verge
   const primarySelectors = [
-    // Newer article format selectors
     ".duet--article--article-body-component",
     ".duet--article--lede-body",
     ".c-entry-content",
     ".l-col__main",
-
-    // Older article format selectors
     ".article-content",
     ".entry-content",
     ".c-entry-content .e-content",
     "#content .c-entry-content",
   ];
 
-  // Try each selector
   for (const selector of primarySelectors) {
     const element = $(selector);
     if (element.length) {
-      // Process the content to remove non-article elements
       element
         .find(
           "aside, .c-related-list, .c-share-social, script, style, .ad, .advertisement, .c-message-callout, .c-newsletter-signup"
         )
         .remove();
 
-      // Get paragraphs and headings
       const paragraphs: string[] = [];
       element.find("p, h2, h3, h4, blockquote, ul li, ol li").each((_, el) => {
         const text = $(el).text().trim();
@@ -98,11 +101,8 @@ function extractVergeContent($: cheerio.CheerioAPI): string {
   return content;
 }
 
-// Generic content extractor for other sites
 function extractGenericContent($: cheerio.CheerioAPI): string {
   let content = "";
-
-  // Common article content selectors
   const selectors = [
     "article",
     "main article",
@@ -118,14 +118,12 @@ function extractGenericContent($: cheerio.CheerioAPI): string {
   for (const selector of selectors) {
     const element = $(selector);
     if (element.length) {
-      // Remove non-content elements
       element
         .find(
           "script, style, meta, noscript, iframe, .ads, .related-articles, .social-share, .newsletter"
         )
         .remove();
 
-      // Extract paragraphs
       const paragraphs: string[] = [];
       element.find("p, h2, h3, h4, blockquote, ul li, ol li").each((_, el) => {
         const text = $(el).text().trim();
@@ -140,36 +138,27 @@ function extractGenericContent($: cheerio.CheerioAPI): string {
   return content;
 }
 
-// Fallback method when other methods fail
 function extractFallbackContent($: cheerio.CheerioAPI): string {
   $(
     "header, footer, nav, aside, .sidebar, .ads, .comments, .related, script, style"
   ).remove();
 
-  // Try to find the main content area by looking for the largest text block
-  const bodyText = $("body").text();
-
-  // Another approach: find all paragraphs and concatenate them
   const paragraphs: string[] = [];
   $("p").each((_, el) => {
     const text = $(el).text().trim();
     if (text && text.length > 50) {
-      // Only consider substantial paragraphs
       paragraphs.push(text);
     }
   });
 
-  return paragraphs.length > 0 ? paragraphs.join("\n\n") : bodyText;
+  return paragraphs.length > 0 ? paragraphs.join("\n\n") : $("body").text();
 }
 
-// Clean up the extracted content
 function cleanContent(content: string): string {
   if (!content) return "";
 
-  // Remove excessive whitespace
   content = content.replace(/\s+/g, " ").trim();
 
-  // Remove common filler phrases that might appear in scraped content
   const fillersToRemove = [
     "Please enable JavaScript to view this site.",
     "Advertisement",
@@ -185,60 +174,90 @@ function cleanContent(content: string): string {
   return content.trim();
 }
 
-// Extract description from content if none is provided
 function extractDescription(content: string): string {
   if (!content) return "No description available";
 
-  // Take the first ~150 characters as description, ending at a complete sentence
   const maxLength = 150;
   let description = content.substring(0, maxLength);
 
-  // Try to end at a sentence boundary
   const lastPeriod = description.lastIndexOf(".");
   if (lastPeriod > maxLength * 0.5) {
-    // Only truncate if we have a substantial sentence
     description = description.substring(0, lastPeriod + 1);
   } else if (description.length === maxLength) {
-    // If we cut in the middle of text, add ellipsis
     description += "...";
   }
 
   return description;
 }
 
-// Enhanced fetchPostsAndSave with better logging and error handling
 export const fetchPostsAndSave = async (
   req?: Request,
   res?: Response
 ): Promise<any> => {
   const startTime = new Date();
+  
   try {
     console.log(
       `🔄 Starting scheduled post fetch and cleanup at ${startTime.toISOString()}`
     );
 
+    // Check MongoDB connection first
+    if (!isMongoConnected()) {
+      const error = "MongoDB is not connected. Waiting for connection...";
+      console.error("❌", error);
+      
+      // Wait for connection (max 30 seconds)
+      const connected = await waitForMongoConnection(30000);
+      
+      if (!connected) {
+        const errorMsg = "MongoDB connection failed after 30 seconds";
+        console.error("❌", errorMsg);
+        if (res) return res.status(503).json({ 
+          success: false, 
+          message: errorMsg 
+        });
+        throw new Error(errorMsg);
+      }
+    }
+
     if (!process.env.news_api) {
       const error = "News API URL not defined in environment variables";
       console.error("❌", error);
-      if (res) return res.status(400).json(error);
+      if (res) return res.status(400).json({ success: false, message: error });
       throw new Error(error);
     }
 
-    // Step 1: Clear all existing posts from the database
-    try {
-      const deletedCount = await PostModel.deleteMany({});
-      console.log(
-        `🗑️ Removed ${deletedCount.deletedCount} old posts from database`
-      );
-    } catch (deleteError: any) {
-      console.error("❌ Error clearing old posts:", deleteError.message);
-      // Continue with fetching new posts even if deletion fails
+    // Step 1: Clear all existing posts with retry logic
+    let deletedCount = 0;
+    let deleteAttempts = 0;
+    const maxDeleteAttempts = 3;
+    
+    while (deleteAttempts < maxDeleteAttempts) {
+      try {
+        deleteAttempts++;
+        console.log(`🗑️ Attempting to clear old posts (attempt ${deleteAttempts}/${maxDeleteAttempts})...`);
+        
+        const result = await PostModel.deleteMany({}).maxTimeMS(20000);
+        deletedCount = result.deletedCount || 0;
+        console.log(`🗑️ Removed ${deletedCount} old posts from database`);
+        break;
+      } catch (deleteError: any) {
+        console.error(`❌ Delete attempt ${deleteAttempts} failed:`, deleteError.message);
+        
+        if (deleteAttempts >= maxDeleteAttempts) {
+          console.error("❌ Max delete attempts reached, continuing anyway...");
+          break;
+        }
+        
+        // Wait before retry
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
     }
 
     // Step 2: Fetch new posts from API
     console.log("📡 Fetching new posts from API...");
     const response = await axios.get(process.env.news_api, {
-      timeout: 30000, // 30 second timeout
+      timeout: 30000,
       headers: {
         "User-Agent": "NewsApp/1.0",
       },
@@ -248,24 +267,29 @@ export const fetchPostsAndSave = async (
     if (!posts || posts.length === 0) {
       const message = "No posts found from API";
       console.log("⚠️", message);
-      if (res) return res.status(200).json(message);
-      return { success: false, message };
+      if (res) return res.status(200).json({ success: true, message, count: 0 });
+      return { success: true, message, count: 0 };
     }
 
     console.log(`📰 Found ${posts.length} posts to process`);
     const savedPosts: IPost[] = [];
+    const failedPosts: any[] = [];
     let processedCount = 0;
 
     // Step 3: Process and save new posts
     for (const post of posts) {
       processedCount++;
       console.log(
-        `📝 Processing post ${processedCount}/${
-          posts.length
-        }: ${post.title?.substring(0, 50)}...`
+        `📝 Processing post ${processedCount}/${posts.length}: ${post.title?.substring(0, 50)}...`
       );
 
-      // Check if content needs to be scraped
+      // Check connection before each save
+      if (!isMongoConnected()) {
+        console.error("❌ MongoDB disconnected during processing");
+        failedPosts.push({ title: post.title, error: "Database disconnected" });
+        continue;
+      }
+
       let fullContent = post.content || "";
       const needsScraping =
         post.url &&
@@ -278,7 +302,6 @@ export const fetchPostsAndSave = async (
       if (needsScraping) {
         try {
           console.log(`🔍 Scraping full content for: ${post.url}`);
-          // Add a small delay to avoid overloading the target site
           await new Promise((resolve) => setTimeout(resolve, 1000));
           fullContent = await scrapeFullContent(post.url);
         } catch (scrapeError: any) {
@@ -286,12 +309,10 @@ export const fetchPostsAndSave = async (
             `❌ Failed to scrape content for ${post.url}:`,
             scrapeError.message
           );
-          // Keep the original content if scraping fails
           fullContent = fullContent || "Content unavailable";
         }
       }
 
-      // Ensure description exists, generate one from content if needed
       let description = post.description;
       if (!description || description.trim() === "") {
         description = extractDescription(fullContent);
@@ -308,28 +329,52 @@ export const fetchPostsAndSave = async (
         source: post.source || { id: null, name: "Unknown Source" },
       });
 
-      try {
-        await newPost.save();
-        savedPosts.push(newPost);
-        console.log(`✅ Saved: ${post.title?.substring(0, 50)}...`);
-      } catch (saveError: any) {
-        console.error(
-          `❌ Error saving post "${post.title}":`,
-          saveError.message
-        );
-        // Continue with the next post instead of failing the entire process
+      // Retry logic for saving
+      let saveAttempts = 0;
+      const maxSaveAttempts = 3;
+      let saved = false;
+      
+      while (saveAttempts < maxSaveAttempts && !saved) {
+        try {
+          saveAttempts++;
+          await newPost.save({ maxTimeMS: 15000 });
+          savedPosts.push(newPost);
+          console.log(`✅ Saved: ${post.title?.substring(0, 50)}...`);
+          saved = true;
+        } catch (saveError: any) {
+          console.error(
+            `❌ Save attempt ${saveAttempts} failed for "${post.title}":`,
+            saveError.message
+          );
+          
+          if (saveAttempts >= maxSaveAttempts) {
+            failedPosts.push({ title: post.title, error: saveError.message });
+            break;
+          }
+          
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
       }
     }
 
     const endTime = new Date();
     const duration = endTime.getTime() - startTime.getTime();
-    const successMessage = `Successfully processed ${savedPosts.length} articles in ${duration}ms`;
+    const successMessage = `Successfully processed ${savedPosts.length}/${posts.length} articles in ${duration}ms`;
     console.log(`🎉 ${successMessage}`);
+    
+    if (failedPosts.length > 0) {
+      console.log(`⚠️ ${failedPosts.length} posts failed to save:`, 
+        failedPosts.map(p => p.title));
+    }
 
     const result = {
       success: true,
       message: successMessage,
       count: savedPosts.length,
+      totalAttempted: posts.length,
+      failed: failedPosts.length,
+      failedPosts: failedPosts,
       posts: savedPosts,
       executionTime: duration,
       timestamp: endTime.toISOString(),
@@ -361,7 +406,6 @@ export const fetchPostsAndSave = async (
   }
 };
 
-// Store the cron task reference and execution history
 let scheduledTask: any = null;
 let lastExecution: Date | null = null;
 let executionHistory: Array<{
@@ -370,7 +414,6 @@ let executionHistory: Array<{
   message: string;
 }> = [];
 
-// Add execution to history (keep last 10 executions)
 const addToHistory = (success: boolean, message: string) => {
   executionHistory.unshift({
     timestamp: new Date(),
@@ -378,24 +421,30 @@ const addToHistory = (success: boolean, message: string) => {
     message,
   });
 
-  // Keep only last 10 executions
   if (executionHistory.length > 10) {
     executionHistory = executionHistory.slice(0, 10);
   }
 };
 
-// Enhanced scheduler with better error handling and logging
-export const startPostScheduler = () => {
+export const startPostScheduler = async () => {
   console.log("🔧 Initializing post scheduler...");
 
-  // Validate cron pattern
+  // Wait for MongoDB connection before starting scheduler
+  console.log("⏳ Waiting for MongoDB connection...");
+  const connected = await waitForMongoConnection(60000); // 60 second timeout
+  
+  if (!connected) {
+    console.error("❌ Cannot start scheduler: MongoDB not connected");
+    console.error("💡 Scheduler will retry when database connection is established");
+    return;
+  }
+
   const cronPattern = "0 0,12 * * *";
   if (!cron.validate(cronPattern)) {
     console.error("❌ Invalid cron pattern:", cronPattern);
     return;
   }
 
-  // Create scheduled task
   scheduledTask = cron.schedule(
     cronPattern,
     async () => {
@@ -406,10 +455,18 @@ export const startPostScheduler = () => {
       console.log(`📊 System time: ${new Date().toString()}`);
       console.log(`🌍 UTC time: ${new Date().toUTCString()}`);
 
+      // Check connection before executing
+      if (!isMongoConnected()) {
+        const errorMsg = "Scheduled execution skipped: MongoDB not connected";
+        console.error(`❌ ${errorMsg}`);
+        addToHistory(false, errorMsg);
+        return;
+      }
+
       try {
         const result = await fetchPostsAndSave();
         lastExecution = executionStart;
-        const successMessage = `Scheduled post fetch completed successfully - ${result.count} posts processed`;
+        const successMessage = `Scheduled post fetch completed - ${result.count}/${result.totalAttempted} posts saved`;
         console.log(`✅ ${successMessage}`);
         addToHistory(true, successMessage);
       } catch (error: any) {
@@ -425,13 +482,11 @@ export const startPostScheduler = () => {
     }
   );
 
-  // Start the task (it starts automatically when created)
   try {
     console.log("🚀 Post scheduler created and started successfully");
-    console.log(`⏰ Next execution times (UTC): 00:00 and 12:00 daily`);
+    console.log(`⏰ Schedule: 00:00 and 12:00 UTC daily`);
     console.log(`🕐 Current UTC time: ${new Date().toUTCString()}`);
 
-    // Log when the next execution will be
     const now = new Date();
     const nextHour = now.getUTCHours() < 12 ? 12 : 24;
     const nextExecution = new Date(now);
@@ -445,12 +500,19 @@ export const startPostScheduler = () => {
   }
 };
 
-// Manual trigger endpoint with enhanced logging
 export const manualPostRefresh = async (req: Request, res: Response) => {
   try {
     console.log(
       `🔄 Manual post refresh triggered at ${new Date().toISOString()}`
     );
+    
+    if (!isMongoConnected()) {
+      return res.status(503).json({
+        success: false,
+        message: "MongoDB is not connected",
+      });
+    }
+    
     const result = await fetchPostsAndSave(req, res);
     addToHistory(
       true,
@@ -467,12 +529,10 @@ export const manualPostRefresh = async (req: Request, res: Response) => {
   }
 };
 
-// Enhanced scheduler status with execution history
 export const getSchedulerStatus = (req: Request, res: Response) => {
   const isActive = scheduledTask !== null;
   const now = new Date();
 
-  // Calculate next execution time
   const currentHour = now.getUTCHours();
   const nextHour = currentHour < 12 ? 12 : 24;
   const nextExecution = new Date(now);
@@ -483,6 +543,9 @@ export const getSchedulerStatus = (req: Request, res: Response) => {
 
   res.json({
     schedulerActive: isActive,
+    mongoConnected: isMongoConnected(),
+    mongoState: mongoose.connection.readyState,
+    mongoStateDescription: ['disconnected', 'connected', 'connecting', 'disconnecting'][mongoose.connection.readyState] || 'unknown',
     taskStatus: scheduledTask ? "running" : "stopped",
     cronPattern: "0 0,12 * * *",
     timezone: "UTC",
@@ -497,28 +560,36 @@ export const getSchedulerStatus = (req: Request, res: Response) => {
   });
 };
 
-// Health check endpoint for the scheduler
 export const schedulerHealthCheck = (req: Request, res: Response) => {
-  const isHealthy = scheduledTask !== null;
+  const isHealthy = scheduledTask !== null && isMongoConnected();
   const recentFailures = executionHistory
     .filter((exec) => !exec.success)
     .filter(
       (exec) => Date.now() - exec.timestamp.getTime() < 24 * 60 * 60 * 1000
-    ); // Last 24 hours
+    );
 
   res.status(isHealthy ? 200 : 503).json({
     healthy: isHealthy,
     schedulerRunning: scheduledTask !== null,
+    mongoConnected: isMongoConnected(),
+    mongoState: mongoose.connection.readyState,
     recentFailures: recentFailures.length,
     lastExecution: lastExecution?.toISOString() || "Never",
     uptime: process.uptime(),
   });
 };
 
-// Test cron execution (for debugging)
 export const testCronExecution = async (req: Request, res: Response) => {
   try {
     console.log("🧪 Testing cron execution manually...");
+    
+    if (!isMongoConnected()) {
+      return res.status(503).json({
+        success: false,
+        message: "MongoDB is not connected",
+      });
+    }
+    
     const result = await fetchPostsAndSave();
     res.json({
       success: true,
@@ -535,7 +606,6 @@ export const testCronExecution = async (req: Request, res: Response) => {
   }
 };
 
-// Stop scheduler with cleanup
 export const stopPostScheduler = () => {
   if (scheduledTask) {
     try {
@@ -551,12 +621,11 @@ export const stopPostScheduler = () => {
   }
 };
 
-// Restart scheduler
-export const restartPostScheduler = (req: Request, res: Response) => {
+export const restartPostScheduler = async (req: Request, res: Response) => {
   try {
     console.log("🔄 Restarting post scheduler...");
     stopPostScheduler();
-    startPostScheduler();
+    await startPostScheduler();
     res.json({
       success: true,
       message: "Scheduler restarted successfully",
@@ -570,8 +639,17 @@ export const restartPostScheduler = (req: Request, res: Response) => {
     });
   }
 };
+
 export const getPosts = async (req: Request, res: Response) => {
   try {
+    // Check MongoDB connection
+    if (!isMongoConnected()) {
+      return res.status(503).json({ 
+        message: "Database not available",
+        mongoConnected: false 
+      });
+    }
+
     const isFeatured = req.query.featured === "true";
     const isRecent = req.query.recent === "true";
     const particularPost = req.query._id;
@@ -579,20 +657,17 @@ export const getPosts = async (req: Request, res: Response) => {
     const searchPosts =
       typeof req.query.search === "string" ? req.query.search : "";
 
-    // Pagination parameters
-    const page = parseInt(req.query.page as string) || 0; // Default to page 0
-    const limit = parseInt(req.query.limit as string) || 9; // Default to 9 posts per page
+    const page = parseInt(req.query.page as string) || 0;
+    const limit = parseInt(req.query.limit as string) || 9;
     const skip = page * limit;
 
     let posts: IPost[];
     let totalCount = 0;
 
     if (isFeatured) {
-      // Return 3 featured posts (no pagination needed for featured)
       posts = await PostModel.find({}).sort({ publishedAt: 1 }).limit(3);
       totalCount = 3;
     } else if (isRecent) {
-      // Return recent posts, sorted by createdAt descending (no pagination needed for recent)
       posts = await PostModel.find({}).sort({ publishedAt: -1 }).limit(4);
       totalCount = 4;
     } else if (particularPost) {
@@ -602,19 +677,13 @@ export const getPosts = async (req: Request, res: Response) => {
       posts = await PostModel.find({ _id: { $ne: relatedPost } }).limit(3);
       totalCount = 3;
     } else if (searchPosts) {
-      // Search with pagination
       const searchQuery = { $text: { $search: searchPosts } };
-
-      // Get total count for pagination info
       totalCount = await PostModel.countDocuments(searchQuery);
-
-      // Get paginated results
       posts = await PostModel.find(searchQuery)
         .sort({ publishedAt: -1 })
         .skip(skip)
         .limit(limit);
     } else {
-      // Return all posts with pagination
       totalCount = await PostModel.countDocuments({});
       posts = await PostModel.find({})
         .sort({ publishedAt: -1 })
@@ -622,12 +691,10 @@ export const getPosts = async (req: Request, res: Response) => {
         .limit(limit);
     }
 
-    // Calculate pagination metadata
     const totalPages = Math.ceil(totalCount / limit);
     const hasNextPage = page < totalPages - 1;
     const hasPrevPage = page > 0;
 
-    // Return posts with pagination metadata
     res.status(200).json({
       posts,
       pagination: {
