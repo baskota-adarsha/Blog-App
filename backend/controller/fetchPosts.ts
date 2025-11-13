@@ -202,10 +202,11 @@ interface FetchResult {
   timestamp: string;
 }
 
-export const fetchPostsAndSave = async (
+// Internal function with optional params
+async function fetchPostsAndSaveInternal(
   req?: Request,
   res?: Response
-): Promise<FetchResult | void> => {
+): Promise<FetchResult | void> {
   const startTime = new Date();
   
   try {
@@ -506,7 +507,7 @@ export const startPostScheduler = async () => {
       }
 
       try {
-        const result = await fetchPostsAndSave();
+        const result = await fetchPostsAndSaveInternal();
         lastExecution = executionStart;
         if (result) {
           const successMessage = `Scheduled post fetch completed - ${result.count}/${result.totalAttempted} posts saved`;
@@ -544,6 +545,11 @@ export const startPostScheduler = async () => {
   }
 };
 
+// Export for Express routes - required params
+export const fetchPostsAndSave = async (req: Request, res: Response): Promise<void> => {
+  await fetchPostsAndSaveInternal(req, res);
+};
+
 export const manualPostRefresh = async (req: Request, res: Response): Promise<void> => {
   try {
     console.log(
@@ -558,7 +564,7 @@ export const manualPostRefresh = async (req: Request, res: Response): Promise<vo
       return;
     }
     
-    const result = await fetchPostsAndSave(req, res);
+    const result = await fetchPostsAndSaveInternal(req, res);
     if (result) {
       addToHistory(
         true,
@@ -638,7 +644,7 @@ export const testCronExecution = async (req: Request, res: Response): Promise<vo
       return;
     }
     
-    const result = await fetchPostsAndSave();
+    const result = await fetchPostsAndSaveInternal();
     res.json({
       success: true,
       message: "Test execution completed",
