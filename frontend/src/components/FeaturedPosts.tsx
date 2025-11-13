@@ -70,7 +70,7 @@ async function getPosts(): Promise<IPost[]> {
     const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
     const response = await fetch(` ${API_URL}/api/getPosts?featured=true`, {
-      next: { revalidate: 1 },
+      next: { revalidate: 60 },
     });
 
     if (!response.ok) {
