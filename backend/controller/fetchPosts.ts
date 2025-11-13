@@ -6,6 +6,7 @@ import * as cheerio from "cheerio";
 import { Request, Response } from "express";
 import cron from "node-cron";
 import mongoose from "mongoose";
+import { RequestHandler } from "express";
 dotenv.config();
 
 // Check if MongoDB is connected
@@ -190,7 +191,7 @@ function extractDescription(content: string): string {
   return description;
 }
 
-export const fetchPostsAndSave = async (
+export const fetchPostsAndSave: RequestHandler = async (
   req?: Request,
   res?: Response
 ): Promise<any> => {
